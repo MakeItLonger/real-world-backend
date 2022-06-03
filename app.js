@@ -43,6 +43,7 @@ if (isProduction) {
     mongoose.set('debug', true);
 }
 
+require('./models/User');
 app.use(require('./routes'));
 
 app.use((req, res, next) => {
