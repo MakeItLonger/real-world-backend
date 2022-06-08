@@ -9,7 +9,6 @@ const fs = require('fs'),
     passport = require('passport'),
     errorhandler = require('errorhandler'),
     mongoose = require('mongoose');
-
 const isProduction = process.env.NODE_ENV === 'production';
 
 const app = express();
@@ -44,6 +43,7 @@ if (isProduction) {
 }
 
 require('./models/User');
+require('./models/Article');
 require('./config/passport');
 
 app.use(require('./routes'));
