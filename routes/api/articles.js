@@ -2,6 +2,7 @@ const router = require('express').Router();
 const passport = require('passport');
 const mongoose = require('mongoose');
 const Article = mongoose.model('Article');
+const Comment = mongoose.model('Comment');
 const User = mongoose.model('User');
 const auth = require('../auth');
 
@@ -14,6 +15,20 @@ router.param('article', (req, res, next, slug) => {
             }
 
             req.article = article;
+
+            return next();
+        })
+        .catch(next);
+});
+
+router.param('comment', (req, res, next, id) => {
+    Comment.findById(id)
+        .then((comment) => {
+            if (!comment) {
+                return res.sendStatus(404);
+            }
+
+            req.comment = comment;
 
             return next();
         })
@@ -53,35 +68,33 @@ router.get('/:article', auth.optional, (req, res, next) => {
 });
 
 router.put('/:article', auth.required, (req, res, next) => {
-    User.findById(req.payload.id).then((user) => {
-        if (req.article.author._id.toString() === req.payload.id.toString()) {
-            if (typeof req.body.article.title !== 'undefined') {
-                req.article.title = req.body.article.title;
-            }
-
-            if (typeof req.body.article.description !== 'undefined') {
-                req.article.description = req.body.article.description;
-            }
-
-            if (typeof req.body.article.body !== 'undefined') {
-                req.article.body = req.body.article.body;
-            }
-
-            req.article
-                .save()
-                .then((article) => {
-                    return res.json({ article: article.toJSONFor(user) });
-                })
-                .catch(next);
-        } else {
-            return res.sendStatus(403);
+    if (req.article._id.toString() === req.payload.id.toString()) {
+        if (typeof req.body.article.title !== 'undefined') {
+            req.article.title = req.body.article.title;
         }
-    });
+
+        if (typeof req.body.article.description !== 'undefined') {
+            req.article.description = req.body.article.description;
+        }
+
+        if (typeof req.body.article.body !== 'undefined') {
+            req.article.body = req.body.article.body;
+        }
+
+        req.article
+            .save()
+            .then((article) => {
+                return res.json({ article: article.toJSONFor(user) });
+            })
+            .catch(next);
+    } else {
+        return res.send(403);
+    }
 });
 
 router.delete('/:article', auth.required, (req, res, next) => {
     User.findById(req.payload.id).then(() => {
-        if (req.article.author._id.toString() === req.payload.id.toString()) {
+        if (req.article.author.toString() === req.payload.id.toString()) {
             return req.article.remove().then(() => {
                 return res.sendStatus(204);
             });
@@ -126,5 +139,72 @@ router.delete('/:article/favorite', auth.required, (req, res, next) => {
         })
         .catch(next);
 });
+
+router.get('/:article/comments', auth.optional, (req, res, next) => {
+    Promise.resolve(req.payload ? User.findById(req.payload.id) : null)
+        .then((user) => {
+            return req.article
+                .populate({
+                    path: 'comments',
+                    populate: {
+                        path: 'author',
+                    },
+                    options: {
+                        sort: {
+                            createdAt: 'desc',
+                        },
+                    },
+                })
+                .execPopulate()
+                .then((article) => {
+                    return res.json({
+                        comments: req.article.comments.map((comment) => {
+                            return comment.toJSONFor(user);
+                        }),
+                    });
+                });
+        })
+        .catch(next);
+});
+
+router.post('/:article/comments', auth.required, (req, res, next) => {
+    User.findById(req.payload.id)
+        .then((user) => {
+            if (!user) {
+                return res.sendStatus(401);
+            }
+
+            const comment = new Comment(req.body.comment);
+            comment.article = req.article;
+            comment.author = user;
+
+            return comment.save().then(() => {
+                req.article.comments = req.article.comments.concat([comment]);
+
+                return req.article.save().then((article) => {
+                    res.json({ comment: comment.toJSONFor(user) });
+                });
+            });
+        })
+        .catch(next);
+});
+
+router.delete(
+    '/:article/comments/:comment',
+    auth.required,
+    (req, res, next) => {
+        if (req.comment.author.toString() === req.payload.id.toString()) {
+            req.article.comments.remove(req.comment._id);
+            req.article
+                .save()
+                .then(Comment.find({ _id: req.comment._id }).remove().exec())
+                .then(() => {
+                    res.sendStatus(204);
+                });
+        } else {
+            res.sendStatus(403);
+        }
+    }
+);
 
 module.exports = router;
